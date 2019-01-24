@@ -4,7 +4,7 @@ import set = require("lodash/set");
 import get = require("lodash/get");
 import * as fs from "fs-extra";
 import * as path from "path";
-import { encodeAsync, decodeAsync } from "encoded-buffer";
+import * as FRON from "fron";
 
 const state = Symbol("state");
 const oid = Symbol("objectId");
@@ -14,13 +14,14 @@ export interface StorageOptions {
     gcTimeout?: number;
 }
 
+/** Half-memory, half-file database storage. */
 export class Storage extends EventEmitter implements StorageOptions {
     readonly name: string;
     readonly path: string;
     readonly dbpath: string;
     readonly gcTimeout: number;
     private data: { [x: string]: [number, any] } = {};
-    private gcTimer: NodeJS.Timer;
+    private gcTimer: NodeJS.Timeout;
 
     constructor(name: string, options: StorageOptions = {}) {
         super(name);
@@ -38,9 +39,14 @@ export class Storage extends EventEmitter implements StorageOptions {
             }
         }, this.gcTimeout);
 
-        this.on("private:set", (id, path, data) => {
-            id !== this[oid] && set(this.data, path, data);
+        this.on("private:set", async (id, path, data) => {
+            // When receiving the 'set' event, other processes in the cluster 
+            // should set data as well and keep the database always synchronized.
+            id !== this[oid] && set(this.data, path, await FRON.parseAsync(data));
         }).on("private:sync", async (id) => {
+            // When receiving the 'sync' event, if the current process is the 
+            // manager process, flush all stored data to file, when done, notify
+            // the cluster that the file db has been updated.
             if (await isManager()) {
                 await this.flush();
                 this.emit("private:finishSync", id)
@@ -71,13 +77,13 @@ export class Storage extends EventEmitter implements StorageOptions {
     }
 
     private async flush() {
-        let buf = await encodeAsync(this.data);
-        await fs.writeFile(this.dbpath, buf);
+        let data = await FRON.stringifyAsync(this.data);
+        await fs.writeFile(this.dbpath, data);
     }
 
     private async read() {
-        let buf = await fs.readFile(this.dbpath);
-        this.data = (await decodeAsync(buf))[0];
+        let data = await fs.readFile(this.dbpath, "utf8");
+        this.data = await FRON.parseAsync(data, this.path);
     }
 
     /**
@@ -88,10 +94,10 @@ export class Storage extends EventEmitter implements StorageOptions {
      *  storage.set("hello", "world");
      *  storage.set("inner.scope", "Hello, World!");
      */
-    set<T>(path: string, value: T, ttl: number = 0): Promise<T> {
+    async set<T>(path: string, value: T, ttl: number = 0): Promise<T> {
         let data = ttl ? [Date.now() + ttl, value] : [0, value];
         set(this.data, path, data);
-        this.emit("private:set", this[oid], path, data);
+        this.emit("private:set", this[oid], path, await FRON.stringify(data));
         return this.get(path);
     }
 
@@ -99,7 +105,7 @@ export class Storage extends EventEmitter implements StorageOptions {
      * Gets data according to the given path.
      * @example
      *  storage.get("hello");
-     *  storage.set("inner.scope");
+     *  storage.get("inner.scope");
      */
     get<T = any>(path: string): Promise<T> {
         let [time, value] = get(this.data, path);
@@ -111,13 +117,14 @@ export class Storage extends EventEmitter implements StorageOptions {
         await new Promise((resolve, reject) => {
             let id = this.generateId();
             let timer = setTimeout(() => {
-                reject(new Error("sync failed after 2000ms timeout"));
-            }, 2000);
+                reject(new Error("sync failed after 5000ms timeout"));
+            }, 5000);
 
+            // publish the sync event to all cluster processes.
             this.once("private:finishSync", rid => {
                 rid === id && resolve();
                 clearInterval(timer);
-            }).emit("private:sync", id);;
+            }).emit("private:sync", id);
         });
         await this.read();
     }

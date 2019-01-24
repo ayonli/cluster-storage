@@ -7,7 +7,7 @@ const set = require("lodash/set");
 const get = require("lodash/get");
 const fs = require("fs-extra");
 const path = require("path");
-const encoded_buffer_1 = require("encoded-buffer");
+const FRON = require("fron");
 const state = Symbol("state");
 const oid = Symbol("objectId");
 class Storage extends cluster_events_1.EventEmitter {
@@ -26,9 +26,9 @@ class Storage extends cluster_events_1.EventEmitter {
                 yield this.flush();
             }
         }), this.gcTimeout);
-        this.on("private:set", (id, path, data) => {
-            id !== this[oid] && set(this.data, path, data);
-        }).on("private:sync", (id) => tslib_1.__awaiter(this, void 0, void 0, function* () {
+        this.on("private:set", (id, path, data) => tslib_1.__awaiter(this, void 0, void 0, function* () {
+            id !== this[oid] && set(this.data, path, yield FRON.parseAsync(data));
+        })).on("private:sync", (id) => tslib_1.__awaiter(this, void 0, void 0, function* () {
             if (yield manager_process_1.isManager()) {
                 yield this.flush();
                 this.emit("private:finishSync", id);
@@ -58,21 +58,23 @@ class Storage extends cluster_events_1.EventEmitter {
     }
     flush() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            let buf = yield encoded_buffer_1.encodeAsync(this.data);
-            yield fs.writeFile(this.dbpath, buf);
+            let data = yield FRON.stringifyAsync(this.data);
+            yield fs.writeFile(this.dbpath, data);
         });
     }
     read() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            let buf = yield fs.readFile(this.dbpath);
-            this.data = (yield encoded_buffer_1.decodeAsync(buf))[0];
+            let data = yield fs.readFile(this.dbpath, "utf8");
+            this.data = yield FRON.parseAsync(data, this.path);
         });
     }
     set(path, value, ttl = 0) {
-        let data = ttl ? [Date.now() + ttl, value] : [0, value];
-        set(this.data, path, data);
-        this.emit("private:set", this[oid], path, data);
-        return this.get(path);
+        return tslib_1.__awaiter(this, void 0, void 0, function* () {
+            let data = ttl ? [Date.now() + ttl, value] : [0, value];
+            set(this.data, path, data);
+            this.emit("private:set", this[oid], path, yield FRON.stringify(data));
+            return this.get(path);
+        });
     }
     get(path) {
         let [time, value] = get(this.data, path);
@@ -83,13 +85,12 @@ class Storage extends cluster_events_1.EventEmitter {
             yield new Promise((resolve, reject) => {
                 let id = this.generateId();
                 let timer = setTimeout(() => {
-                    reject(new Error("sync failed after 2000ms timeout"));
-                }, 2000);
+                    reject(new Error("sync failed after 5000ms timeout"));
+                }, 5000);
                 this.once("private:finishSync", rid => {
                     rid === id && resolve();
                     clearInterval(timer);
                 }).emit("private:sync", id);
-                ;
             });
             yield this.read();
         });
