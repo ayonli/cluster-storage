@@ -105,7 +105,6 @@ if (cluster.isMaster) {
                 assert.strictEqual(store.get("foo-ttl-2000"), null);
                 console.log("Get data with TTL in another worker: OK");
 
-                yield sleep(10); // wait a while for synchronization
                 assert.strictEqual(store.get("foo-will-be-delete"), data);
                 yield sleep(50); // wait a while for deletion
                 assert.strictEqual(store.has("foo-will-be-delete"), false);
