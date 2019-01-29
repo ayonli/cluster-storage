@@ -4,14 +4,15 @@ import { EventEmitter } from "cluster-events";
 import { isManager } from "manager-process";
 import set = require("lodash/set");
 import get = require("lodash/get");
+import has = require("lodash/has");
 import pick = require("lodash/pick");
 import unset = require("lodash/unset");
 import clone = require("lodash/cloneDeep");
 import { state, oid, randStr, checkState, isDifferent } from './util';
 
-export interface CacheOptions {
+export interface StoreOptions {
     /**
-     * A directory of where to store the file copy of cache data. default value 
+     * A directory of where to store the file copy of data. default value 
      * is `process.cwd()`.
      */
     path?: string;
@@ -22,8 +23,8 @@ export interface CacheOptions {
     gcInterval?: number;
 }
 
-/** Half-memory-half-file cache system for cluster applications. */
-export class Cache extends EventEmitter implements CacheOptions {
+/** Half-memory-half-file storage system for cluster applications. */
+export class Storage extends EventEmitter implements StoreOptions {
     readonly name: string;
     readonly path: string;
     readonly gcInterval: number;
@@ -31,7 +32,7 @@ export class Cache extends EventEmitter implements CacheOptions {
     private lives: { [x: string]: number } = {};
     private gcTimer: NodeJS.Timeout;
 
-    constructor(name: string, options: CacheOptions = {}) {
+    constructor(name: string, options: StoreOptions = {}) {
         super(name);
         this[oid] = randStr();
         this[state] = "connected";
@@ -72,17 +73,17 @@ export class Cache extends EventEmitter implements CacheOptions {
 
     /** Returns the filename of where the data will be stored in the disk. */
     get filename() {
-        return path.resolve(this.path, this.name + ".cache");
+        return path.resolve(this.path, this.name + ".db");
     }
 
-    /** Whether the cache channel has been connected. */
+    /** Whether the storage channel has been connected. */
     get connected() {
         return !this.closed;
     }
 
     /**
-     * Whether the cache channel has been closed, once closed, the cache data 
-     * can no longer be manipulated.
+     * Whether the storage channel has been closed, once closed, the data can no
+     * longer be manipulated.
      */
     get closed() {
         return this[state] == "closed";
@@ -116,8 +117,8 @@ export class Cache extends EventEmitter implements CacheOptions {
      * @param ttl Time-to-live in milliseconds, default is `0`, means persisting
      *  forever.
      * @example
-     *  cache.set("hello", "world");
-     *  cache.set("foo.bar", "Hello, World!");
+     *  store.set("hello", "world");
+     *  store.set("foo.bar", "Hello, World!");
      */
     set<T>(path: string, data: T, ttl: number = 0): T {
         checkState(this);
@@ -144,8 +145,8 @@ export class Cache extends EventEmitter implements CacheOptions {
      * Gets data according to the given path, if no data is found, `null` will 
      * be returned.
      * @example
-     *  cache.get("hello");
-     *  cache.get("foo.bar");
+     *  store.get("hello");
+     *  store.get("foo.bar");
      */
     get<T = any>(path: string): T {
         checkState(this);
@@ -157,6 +158,17 @@ export class Cache extends EventEmitter implements CacheOptions {
         }
 
         return clone(data);
+    }
+
+    /** Checks if data exists according to the given path. */
+    has(path: string): boolean {
+        checkState(this);
+
+        if (!this.lives[path] || Date.now() < this.lives[path]) {
+            return has(this.data, path);
+        }
+
+        return false;
     }
 
     /** Deletes data according to the given path. */
@@ -191,7 +203,7 @@ export class Cache extends EventEmitter implements CacheOptions {
         await this.read();
     }
 
-    /** Closes the cache channel and flush out the data copy. */
+    /** Closes the storage channel and flush out the data copy. */
     async close() {
         checkState(this);
 
@@ -207,8 +219,8 @@ export class Cache extends EventEmitter implements CacheOptions {
     }
 
     /**
-     * Clears the cache entirely and delete the file copy, the cache will be 
-     * closed after calling this method.
+     * Clears the data entirely and delete the file copy, the storage channel 
+     * will be closed after calling this method.
      */
     async destroy() {
         checkState(this);
@@ -222,4 +234,4 @@ export class Cache extends EventEmitter implements CacheOptions {
     }
 }
 
-export default Cache;
+export default Storage;

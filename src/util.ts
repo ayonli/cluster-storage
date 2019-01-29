@@ -10,7 +10,7 @@ export function randStr() {
 export function checkState(target) {
     if (target[state] == "closed") {
         throw new ReferenceError(
-            "cannot read and write data when the cache is closed."
+            "cannot read and write data when the storage channel is closed."
         );
     }
 }

@@ -7,11 +7,12 @@ const cluster_events_1 = require("cluster-events");
 const manager_process_1 = require("manager-process");
 const set = require("lodash/set");
 const get = require("lodash/get");
+const has = require("lodash/has");
 const pick = require("lodash/pick");
 const unset = require("lodash/unset");
 const clone = require("lodash/cloneDeep");
 const util_1 = require("./util");
-class Cache extends cluster_events_1.EventEmitter {
+class Storage extends cluster_events_1.EventEmitter {
     constructor(name, options = {}) {
         super(name);
         this.data = {};
@@ -44,7 +45,7 @@ class Cache extends cluster_events_1.EventEmitter {
         }));
     }
     get filename() {
-        return path.resolve(this.path, this.name + ".cache");
+        return path.resolve(this.path, this.name + ".db");
     }
     get connected() {
         return !this.closed;
@@ -99,6 +100,13 @@ class Cache extends cluster_events_1.EventEmitter {
         }
         return clone(data);
     }
+    has(path) {
+        util_1.checkState(this);
+        if (!this.lives[path] || Date.now() < this.lives[path]) {
+            return has(this.data, path);
+        }
+        return false;
+    }
     delete(path) {
         util_1.checkState(this);
         unset(this.data, path);
@@ -146,6 +154,6 @@ class Cache extends cluster_events_1.EventEmitter {
         });
     }
 }
-exports.Cache = Cache;
-exports.default = Cache;
+exports.Storage = Storage;
+exports.default = Storage;
 //# sourceMappingURL=index.js.map
