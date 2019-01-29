@@ -5,11 +5,7 @@ const fs = require("fs-extra");
 const { __awaiter } = require("tslib");
 
 function sleep(timeout) {
-    return new Promise(resolve => {
-        setTimeout(() => {
-            resolve();
-        }, timeout);
-    });
+    return new Promise(resolve => setTimeout(resolve, timeout));
 }
 
 if (cluster.isMaster) {
@@ -56,21 +52,28 @@ if (cluster.isMaster) {
                 assert.strictEqual(cache.path, __dirname);
                 console.log("Check cache instance: OK");
 
-                let setData = yield cache.set("foo", data);
-                let getData = yield cache.get("foo");
+                let setData = cache.set("foo", data);
+                let getData = cache.get("foo");
 
                 assert.strictEqual(setData, data);
                 assert.strictEqual(getData, data);
                 console.log("Set and get data: OK");
 
-                setData = yield cache.set("foo-ttl-2000", data, 2000);
-                getData = yield cache.get("foo-ttl-2000");
+                setData = cache.set("foo-ttl-2000", data, 2000);
+                getData = cache.get("foo-ttl-2000");
 
                 assert.strictEqual(setData, data);
                 assert.strictEqual(getData, data);
                 yield sleep(2000);
-                assert.strictEqual(yield cache.get("foo-ttl-2000"), null);
+                assert.strictEqual(cache.get("foo-ttl-2000"), null);
                 console.log("Set and get data with TTL: OK");
+
+                cache.set("foo-will-be-delete", data);
+                assert.strictEqual(cache.get("foo-will-be-delete"), data);
+                yield sleep(50); // wait a while for deletion
+                cache.delete("foo-will-be-delete");
+                assert.strictEqual(cache.get("foo-will-be-delete"), null);
+                console.log("Delete data: OK");
 
                 yield sleep(5000);
                 assert.deepStrictEqual(cache.data, { foo: data });
@@ -85,13 +88,19 @@ if (cluster.isMaster) {
                 });
                 console.log("Check file copy: OK");
             } else if (WORKER_ID == "10002") {
-                assert.strictEqual(yield cache.get("foo"), data);
+                yield sleep(50); // make sure this process runs after the above one.
+                assert.strictEqual(cache.get("foo"), data);
                 console.log("Get data in another worker: OK");
 
-                assert.strictEqual(yield cache.get("foo-ttl-2000"), data);
+                assert.strictEqual(cache.get("foo-ttl-2000"), data);
                 yield sleep(2000);
-                assert.strictEqual(yield cache.get("foo-ttl-2000"), null);
+                assert.strictEqual(cache.get("foo-ttl-2000"), null);
                 console.log("Get data with TTL in another worker: OK");
+
+                assert.strictEqual(cache.get("foo-will-be-delete"), data);
+                yield sleep(50); // wait a while for deletion
+                assert.strictEqual(cache.get("foo-will-be-delete"), null);
+                console.log("Delete data in another worker: OK");
 
                 yield sleep(5000);
                 assert.deepStrictEqual(cache.data, { foo: data });
@@ -101,7 +110,7 @@ if (cluster.isMaster) {
             } else if (WORKER_ID == "10003") {
                 yield cache.sync();
 
-                assert.strictEqual(yield cache.get("foo"), data);
+                assert.strictEqual(cache.get("foo"), data);
                 console.log("Sync data in new worker: OK");
 
                 process.send({ event: "exitTest" });

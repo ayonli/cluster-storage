@@ -10,15 +10,14 @@ const get = require("lodash/get");
 const pick = require("lodash/pick");
 const unset = require("lodash/unset");
 const clone = require("lodash/cloneDeep");
-const state = Symbol("state");
-const oid = Symbol("objectId");
+const util_1 = require("./util");
 class Cache extends cluster_events_1.EventEmitter {
     constructor(name, options = {}) {
         super(name);
         this.data = {};
         this.lives = {};
-        this[oid] = this.generateId();
-        this[state] = "connected";
+        this[util_1.oid] = util_1.randStr();
+        this[util_1.state] = "connected";
         this.name = this.id;
         this.path = options.path || process.cwd();
         this.gcInterval = options.gcInterval || 120000;
@@ -29,9 +28,13 @@ class Cache extends cluster_events_1.EventEmitter {
             }
         }), this.gcInterval);
         this.on("private:set", (id, path, data, life) => tslib_1.__awaiter(this, void 0, void 0, function* () {
-            if (id !== this[oid] && this.connected) {
+            if (id !== this[util_1.oid] && this.connected) {
                 set(this.data, path, data);
                 life && (this.lives[path] = life);
+            }
+        })).on("private:delete", (id, path) => tslib_1.__awaiter(this, void 0, void 0, function* () {
+            if (id !== this[util_1.oid] && this.connected) {
+                unset(this.data, path);
             }
         })).on("private:sync", (id) => tslib_1.__awaiter(this, void 0, void 0, function* () {
             if (yield manager_process_1.isManager()) {
@@ -47,15 +50,7 @@ class Cache extends cluster_events_1.EventEmitter {
         return !this.closed;
     }
     get closed() {
-        return this[state] == "closed";
-    }
-    checkState() {
-        if (this[state] == "closed") {
-            throw new ReferenceError("cannot read and write data when the cache is closed.");
-        }
-    }
-    generateId() {
-        return Math.random().toString(16).slice(2);
+        return this[util_1.state] == "closed";
     }
     gc() {
         let now = Date.now();
@@ -81,33 +76,40 @@ class Cache extends cluster_events_1.EventEmitter {
         });
     }
     set(path, data, ttl = 0) {
-        this.checkState();
-        set(this.data, path, JSON.parse(JSON.stringify(data)));
+        util_1.checkState(this);
+        let oldLife = this.lives[path];
+        let oldData = this.get(path);
         if (ttl) {
             this.lives[path] = Date.now() + ttl;
         }
-        this.emit("private:set", this[oid], path, data, this.lives[path]);
-        return this.get(path);
+        if (this.lives[path] != oldLife || util_1.isDifferent(data, oldData)) {
+            set(this.data, path, JSON.parse(JSON.stringify(data)));
+            this.emit("private:set", this[util_1.oid], path, data, this.lives[path]);
+            return this.get(path);
+        }
+        else {
+            return oldData;
+        }
     }
     get(path) {
+        util_1.checkState(this);
         let data = null;
-        this.checkState();
         if (!this.lives[path] || Date.now() < this.lives[path]) {
             data = get(this.data, path, null);
         }
-        return Promise.resolve(clone(data));
+        return clone(data);
     }
     delete(path) {
-        this.checkState();
+        util_1.checkState(this);
         unset(this.data, path);
+        this.emit("private:delete", this[util_1.oid], path);
         delete this.lives[path];
-        return Promise.resolve(void 0);
     }
     sync() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            this.checkState();
+            util_1.checkState(this);
             yield new Promise((resolve, reject) => {
-                let id = this.generateId();
+                let id = util_1.randStr();
                 let timer = setTimeout(() => {
                     reject(new Error("sync data failed after 5000ms timeout."));
                 }, 5000);
@@ -121,11 +123,11 @@ class Cache extends cluster_events_1.EventEmitter {
     }
     close() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            this.checkState();
+            util_1.checkState(this);
             if (yield manager_process_1.isManager()) {
                 yield this.flush();
             }
-            this[state] = "closed";
+            this[util_1.state] = "closed";
             this.data = {};
             this.lives = {};
             this.removeAllListeners("private:set");
@@ -134,8 +136,8 @@ class Cache extends cluster_events_1.EventEmitter {
     }
     destroy() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
-            this.checkState();
-            this[state] = "closed";
+            util_1.checkState(this);
+            this[util_1.state] = "closed";
             this.data = {};
             this.lives = {};
             this.removeAllListeners("private:set");

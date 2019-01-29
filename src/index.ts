@@ -7,14 +7,12 @@ import get = require("lodash/get");
 import pick = require("lodash/pick");
 import unset = require("lodash/unset");
 import clone = require("lodash/cloneDeep");
-
-const state = Symbol("state");
-const oid = Symbol("objectId");
+import { state, oid, randStr, checkState, isDifferent } from './util';
 
 export interface CacheOptions {
     /**
-     * The directory path of where to store data copy. default value is 
-     * `process.cwd()`.
+     * A directory of where to store the file copy of cache data. default value 
+     * is `process.cwd()`.
      */
     path?: string;
     /**
@@ -24,7 +22,7 @@ export interface CacheOptions {
     gcInterval?: number;
 }
 
-/** Half-memory-half-file cache system. */
+/** Half-memory-half-file cache system for cluster applications. */
 export class Cache extends EventEmitter implements CacheOptions {
     readonly name: string;
     readonly path: string;
@@ -35,7 +33,7 @@ export class Cache extends EventEmitter implements CacheOptions {
 
     constructor(name: string, options: CacheOptions = {}) {
         super(name);
-        this[oid] = this.generateId();
+        this[oid] = randStr();
         this[state] = "connected";
         this.name = this.id;
         this.path = options.path || process.cwd();
@@ -54,6 +52,12 @@ export class Cache extends EventEmitter implements CacheOptions {
             if (id !== this[oid] && this.connected) {
                 set(this.data, path, data);
                 life && (this.lives[path] = life);
+            }
+        }).on("private:delete", async (id, path) => {
+            // When receiving the 'delete' event, other processes in the cluster 
+            // should delete data as well and keep the data always synchronized.
+            if (id !== this[oid] && this.connected) {
+                unset(this.data, path);
             }
         }).on("private:sync", async (id) => {
             // When receiving the 'sync' event, if the current process is the 
@@ -84,18 +88,6 @@ export class Cache extends EventEmitter implements CacheOptions {
         return this[state] == "closed";
     }
 
-    private checkState() {
-        if (this[state] == "closed") {
-            throw new ReferenceError(
-                "cannot read and write data when the cache is closed."
-            );
-        }
-    }
-
-    private generateId() {
-        return Math.random().toString(16).slice(2);
-    }
-
     private gc() {
         let now = Date.now();
 
@@ -120,56 +112,72 @@ export class Cache extends EventEmitter implements CacheOptions {
     }
 
     /**
-    * Sets data to the given path.
+     * Sets data to the given path.
      * @param ttl Time-to-live in milliseconds, default is `0`, means persisting
      *  forever.
      * @example
      *  cache.set("hello", "world");
      *  cache.set("foo.bar", "Hello, World!");
      */
-    set<T>(path: string, data: T, ttl: number = 0): Promise<T> {
-        this.checkState();
-        set(this.data, path, JSON.parse(JSON.stringify(data)));
+    set<T>(path: string, data: T, ttl: number = 0): T {
+        checkState(this);
+
+        let oldLife = this.lives[path];
+        let oldData = this.get(path);
 
         if (ttl) {
             this.lives[path] = Date.now() + ttl;
         }
 
-        this.emit("private:set", this[oid], path, data, this.lives[path]);
+        if (this.lives[path] != oldLife || isDifferent(data, oldData)) {
+            // Set data only if it has been changed.
+            set(this.data, path, JSON.parse(JSON.stringify(data)));
+            this.emit("private:set", this[oid], path, data, this.lives[path]);
 
-        return this.get(path);
+            return this.get(path);
+        } else {
+            return oldData;
+        }
     }
 
     /**
-     * Gets data according to the given path.
+     * Gets data according to the given path, if no data is found, `null` will 
+     * be returned.
      * @example
      *  cache.get("hello");
      *  cache.get("foo.bar");
      */
-    get<T = any>(path: string): Promise<T> {
+    get<T = any>(path: string): T {
+        checkState(this);
+
         let data = null;
-        this.checkState();
 
         if (!this.lives[path] || Date.now() < this.lives[path]) {
             data = get(this.data, path, null);
         }
 
-        return Promise.resolve(clone(data));
+        return clone(data);
     }
 
     /** Deletes data according to the given path. */
-    delete(path: string): Promise<void> {
-        this.checkState();
+    delete(path: string): void {
+        checkState(this);
+
         unset(this.data, path);
+        this.emit("private:delete", this[oid], path);
         delete this.lives[path];
-        return Promise.resolve(void 0);
     }
 
-    /** Synchronizes data when the process has just rebooted. */
+    /**
+     * This method is used to synchronizes data in a new process, it will ask 
+     * the manager process to flush existing data to the file copy and then it 
+     * will read the data from the file.
+     */
     async sync() {
-        this.checkState();
+        checkState(this);
+
         await new Promise((resolve, reject) => {
-            let id = this.generateId();
+            let id = randStr();
             let timer = setTimeout(() => {
                 reject(new Error("sync data failed after 5000ms timeout."));
             }, 5000);
@@ -185,7 +193,7 @@ export class Cache extends EventEmitter implements CacheOptions {
 
     /** Closes the cache channel and flush out the data copy. */
     async close() {
-        this.checkState();
+        checkState(this);
 
         if (await isManager()) {
             await this.flush();
@@ -203,7 +211,8 @@ export class Cache extends EventEmitter implements CacheOptions {
      * closed after calling this method.
      */
     async destroy() {
-        this.checkState();
+        checkState(this);
+
         this[state] = "closed";
         this.data = {};
         this.lives = {};
