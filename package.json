@@ -1,15 +1,15 @@
 {
-  "name": "cluster-storage",
+  "name": "cluster-cache",
   "version": "1.0.0",
-  "description": "Store, persist and share data between PM2 clustered applications.",
+  "description": "Store, retrieve, share and persist cache data in clustered applications.",
   "main": "dist/index.js",
   "types": "src/index.ts",
   "scripts": {
-    "test": "mocha"
+    "test": "node test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hyurl/cluster-storage.git"
+    "url": "git+https://github.com/hyurl/cluster-cache.git"
   },
   "keywords": [
     "cluster",
@@ -19,16 +19,15 @@
   "author": "Ayon Lee <i@hyurl.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/hyurl/cluster-storage/issues"
+    "url": "https://github.com/hyurl/cluster-cache/issues"
   },
-  "homepage": "https://github.com/hyurl/cluster-storage#readme",
+  "homepage": "https://github.com/hyurl/cluster-cache#readme",
   "dependencies": {
     "cluster-events": "^1.0.1",
-    "fron": "^0.1.1",
     "fs-extra": "^7.0.1",
     "lodash": "^4.17.11",
     "manager-process": "^0.1.2",
-    "node-gzip": "^1.1.2"
+    "tslib": "^1.9.3"
   },
   "devDependencies": {
     "@types/lodash": "^4.14.118"
