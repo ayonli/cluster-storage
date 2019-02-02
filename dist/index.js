@@ -20,7 +20,7 @@ class Storage extends cluster_events_1.EventEmitter {
         this[util_1.oid] = util_1.randStr();
         this[util_1.state] = "connected";
         this.name = this.id;
-        this.path = options.path || process.cwd();
+        this.path = path.normalize(options.path) || process.cwd();
         this.gcInterval = options.gcInterval || 120000;
         this.gcTimer = setInterval(() => tslib_1.__awaiter(this, void 0, void 0, function* () {
             this.gc();
@@ -64,6 +64,7 @@ class Storage extends cluster_events_1.EventEmitter {
     }
     flush() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
+            yield fs.ensureDir(this.path);
             yield fs.writeFile(this.filename, JSON.stringify(pick(this, [
                 "lives",
                 "data"

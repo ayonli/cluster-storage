@@ -37,7 +37,7 @@ export class Storage extends EventEmitter implements StoreOptions {
         this[oid] = randStr();
         this[state] = "connected";
         this.name = this.id;
-        this.path = options.path || process.cwd();
+        this.path = path.normalize(options.path) || process.cwd();
         this.gcInterval = options.gcInterval || 120000;
         this.gcTimer = setInterval(async () => {
             this.gc();
@@ -101,6 +101,7 @@ export class Storage extends EventEmitter implements StoreOptions {
     }
 
     private async flush() {
+        await fs.ensureDir(this.path);
         await fs.writeFile(this.filename, JSON.stringify(pick(this, [
             "lives",
             "data"
