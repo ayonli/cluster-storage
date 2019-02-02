@@ -184,23 +184,27 @@ export class Storage extends EventEmitter implements StoreOptions {
     /**
      * This method is used to synchronizes data in a new process, it will ask 
      * the manager process to flush existing data to the file copy and then it 
-     * will read the data from the file.
+     * will read the data from the file. In the manager process, it will just 
+     * read data and will not flush.
      */
     async sync() {
         checkState(this);
 
-        await new Promise((resolve, reject) => {
-            let id = randStr();
-            let timer = setTimeout(() => {
-                reject(new Error("sync data failed after 5000ms timeout."));
-            }, 5000);
+        if (!(await isManager())) {
+            await new Promise((resolve, reject) => {
+                let id = randStr();
+                let timer = setTimeout(() => {
+                    reject(new Error("sync data failed after 5000ms timeout."));
+                }, 5000);
 
-            // publish the sync event to all cluster processes.
-            this.once("private:finishSync", rid => {
-                rid === id && resolve();
-                clearInterval(timer);
-            }).emit("private:sync", id);
-        });
+                // publish the sync event to all cluster processes.
+                this.once("private:finishSync", rid => {
+                    rid === id && resolve();
+                    clearInterval(timer);
+                }).emit("private:sync", id);
+            });
+        }
+
         await this.read();
     }
 

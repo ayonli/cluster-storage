@@ -104,7 +104,8 @@ if (cluster.isMaster) {
 
 - `sync(): Promise<void>` This method is used to synchronizes data in a new 
     process, it will ask the manager process to flush existing data to the file 
-    copy and then it will read the data from the file.
+    copy and then it will read the data from the file. In the manager process, 
+    it will just read data and will not flush.
 
 - `close(): Promise<void>` Closes the storage channel and flush out the data 
     copy. Once closed, the data can no longer be manipulated.

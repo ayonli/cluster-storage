@@ -117,16 +117,18 @@ class Storage extends cluster_events_1.EventEmitter {
     sync() {
         return tslib_1.__awaiter(this, void 0, void 0, function* () {
             util_1.checkState(this);
-            yield new Promise((resolve, reject) => {
-                let id = util_1.randStr();
-                let timer = setTimeout(() => {
-                    reject(new Error("sync data failed after 5000ms timeout."));
-                }, 5000);
-                this.once("private:finishSync", rid => {
-                    rid === id && resolve();
-                    clearInterval(timer);
-                }).emit("private:sync", id);
-            });
+            if (!(yield manager_process_1.isManager())) {
+                yield new Promise((resolve, reject) => {
+                    let id = util_1.randStr();
+                    let timer = setTimeout(() => {
+                        reject(new Error("sync data failed after 5000ms timeout."));
+                    }, 5000);
+                    this.once("private:finishSync", rid => {
+                        rid === id && resolve();
+                        clearInterval(timer);
+                    }).emit("private:sync", id);
+                });
+            }
             yield this.read();
         });
     }
