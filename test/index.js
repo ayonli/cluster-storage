@@ -73,7 +73,7 @@ if (cluster.isMaster) {
 
                 store.set("foo-will-be-delete", data);
                 assert.strictEqual(store.get("foo-will-be-delete"), data);
-                yield sleep(50); // wait a while for deletion
+                yield sleep(100); // wait a while for deletion
                 store.delete("foo-will-be-delete");
                 assert.strictEqual(store.has("foo-will-be-delete"), false);
                 assert.strictEqual(store.get("foo-will-be-delete"), null);
@@ -106,7 +106,7 @@ if (cluster.isMaster) {
                 console.log("Get data with TTL in another worker: OK");
 
                 assert.strictEqual(store.get("foo-will-be-delete"), data);
-                yield sleep(50); // wait a while for deletion
+                yield sleep(100); // wait a while for deletion
                 assert.strictEqual(store.has("foo-will-be-delete"), false);
                 assert.strictEqual(store.get("foo-will-be-delete"), null);
                 console.log("Delete data in another worker: OK");
