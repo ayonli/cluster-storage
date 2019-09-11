@@ -1,6 +1,6 @@
 {
   "name": "cluster-storage",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Store, retrieve, share and persist data in clustered applications.",
   "main": "dist/index.js",
   "types": "src/index.ts",
